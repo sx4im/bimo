@@ -32,9 +32,9 @@ from openai import (
 logger = logging.getLogger("bimo.mistral")
 
 DEFAULT_MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
-DEFAULT_MISTRAL_MODEL = "codestral-2508"
+DEFAULT_MISTRAL_MODEL = "ministral-8b-2512"
 
-CODESTRAL_EXTENDED_THINKING_DIRECTIVE = (
+MISTRAL_EXTENDED_THINKING_DIRECTIVE = (
     "\n\n[EXTENDED THINKING ACTIVE]\n"
     "Apply deep, rigorous analysis before answering:\n"
     "1. Deconstruct the user's requirements and underlying goals thoroughly.\n"
@@ -43,6 +43,7 @@ CODESTRAL_EXTENDED_THINKING_DIRECTIVE = (
     "4. Deliver clean, performant, production-grade solutions with architectural clarity.\n"
     "5. Detail key technical trade-offs where appropriate."
 )
+CODESTRAL_EXTENDED_THINKING_DIRECTIVE = MISTRAL_EXTENDED_THINKING_DIRECTIVE
 
 _INVISIBLE_CHARS = (" ", "​", "‌", "‍", "﻿")
 _client_cache: dict[str, OpenAI] = {}
@@ -100,7 +101,14 @@ def is_mistral_model(model_name: Optional[str]) -> bool:
     if not model_name:
         return False
     m = model_name.lower().strip()
-    return m.startswith("mistral") or "codestral" in m or "pixtral" in m or m == default_model().lower()
+    return (
+        m.startswith("mistral")
+        or m.startswith("ministral")
+        or "codestral" in m
+        or "pixtral" in m
+        or "ministral" in m
+        or m == default_model().lower()
+    )
 
 
 def _client() -> OpenAI:
@@ -173,8 +181,8 @@ def iter_response(
             has_system = True
         cleaned_messages.append({"role": role, "content": content})
 
-    # For codestral, default to 0.2 temperature for faster, low-divergence decoding
-    if "codestral" in chosen_model.lower() and temperature == 0.7:
+    # For codestral and ministral, default to 0.2 temperature for faster, low-divergence decoding
+    if any(k in chosen_model.lower() for k in ("codestral", "ministral")) and temperature == 0.7:
         temperature = 0.2
 
     # Inject extended thinking directive if requested
@@ -182,10 +190,10 @@ def iter_response(
         if has_system:
             for m in cleaned_messages:
                 if m["role"] == "system":
-                    m["content"] = str(m["content"]) + CODESTRAL_EXTENDED_THINKING_DIRECTIVE
+                    m["content"] = str(m["content"]) + MISTRAL_EXTENDED_THINKING_DIRECTIVE
                     break
         else:
-            cleaned_messages.insert(0, {"role": "system", "content": CODESTRAL_EXTENDED_THINKING_DIRECTIVE.strip()})
+            cleaned_messages.insert(0, {"role": "system", "content": MISTRAL_EXTENDED_THINKING_DIRECTIVE.strip()})
 
     call_kwargs = {
         "model": chosen_model,

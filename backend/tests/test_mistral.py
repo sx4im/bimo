@@ -21,9 +21,9 @@ def test_mistral_config_defaults(monkeypatch):
     monkeypatch.delenv("MISTRAL_BASE_URL", raising=False)
     monkeypatch.delenv("NVIDIA_STANZA_MODEL", raising=False)
 
-    assert mistral_client.default_model() == "codestral-2508"
+    assert mistral_client.default_model() == "ministral-8b-2512"
     assert mistral_client.base_url() == "https://api.mistral.ai/v1"
-    assert config.get_stanza_model() == "codestral-2508"
+    assert config.get_stanza_model() == "ministral-8b-2512"
 
 
 def test_mistral_model_env_override(monkeypatch):
@@ -35,6 +35,7 @@ def test_mistral_model_env_override(monkeypatch):
 
 def test_is_mistral_model():
     """Verify identification of Mistral models."""
+    assert mistral_client.is_mistral_model("ministral-8b-2512") is True
     assert mistral_client.is_mistral_model("codestral-2508") is True
     assert mistral_client.is_mistral_model("codestral-22b-instruct") is True
     assert mistral_client.is_mistral_model("mistral-small-2603") is True

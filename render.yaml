@@ -89,6 +89,6 @@ services:
       - key: MISTRAL_API_KEY
         sync: false
       - key: MISTRAL_MODEL
-        value: codestral-2508
+        value: ministral-8b-2512
 
 
