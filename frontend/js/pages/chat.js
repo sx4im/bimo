@@ -112,9 +112,7 @@ export async function renderChat({ id, incognito }) {
   let loading = false;
   let availableModels = DEFAULT_AVAILABLE_MODELS;
   let defaultModel = "thinking";
-  let searching = false;
   let searchingLabel = "Searching the web";
-
 
   let enteringId = null;
   let searching = false;
