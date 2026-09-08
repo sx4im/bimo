@@ -3659,6 +3659,7 @@ body:has(.chat-page.is-empty) .tools-menu,
 }
 
 .composer textarea {
+  display: block;
   width: 100%;
   min-width: 0;
   resize: none;
@@ -3677,6 +3678,9 @@ body:has(.chat-page.is-empty) .tools-menu,
   max-height: 168px;
   line-height: 1.5;
   overflow-y: auto;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  white-space: pre-wrap;
   /* Thin, unobtrusive scrollbar that matches the warm palette. */
   scrollbar-width: thin;
   scrollbar-color: var(--hairline-strong) transparent;
@@ -5909,8 +5913,7 @@ body:has(.chat-page.is-empty) .tools-menu,
     min-width: 40px;
   }
 
-  .composer textarea,
-  .composer-backdrop {
+  .composer textarea {
     font-size: 16px;
     /* prevent iOS zoom on focus */
     padding: 6px 2px 2px;
@@ -5918,6 +5921,14 @@ body:has(.chat-page.is-empty) .tools-menu,
     height: 40px;
     min-height: 40px;
     max-height: 160px;
+  }
+
+  .composer-backdrop {
+    font-size: 16px;
+    padding: 6px 2px 2px;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
   }
 
   /* No separate placeholder font-size override — keeping it at 16px avoids

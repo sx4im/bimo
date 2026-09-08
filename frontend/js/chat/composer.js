@@ -492,8 +492,12 @@ export class Composer {
   }
 
   autoSize(node) {
+    const prevScrollTop = node.scrollTop;
     node.style.height = "auto";
     node.style.height = `${node.scrollHeight}px`;
+    if (prevScrollTop && node.scrollTop !== prevScrollTop) {
+      node.scrollTop = prevScrollTop;
+    }
     if (this.backdrop && node === this.textarea) {
       this.backdrop.scrollTop = node.scrollTop;
       this.backdrop.scrollLeft = node.scrollLeft;
