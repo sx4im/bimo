@@ -1087,6 +1087,7 @@ def test_chat_default_reasoning_efforts(client, monkeypatch):
     monkeypatch.setattr("app.routes.chat_routes.get_usage_status", lambda uid: {"blocked": False, "session": {"used": 0, "limit": 100000}, "weekly": {"used": 0, "limit": 1000000}})
     monkeypatch.setattr(store, "recent_usage_events", lambda *args, **kwargs: [])
     monkeypatch.setattr(store, "get_conversation", lambda cid, uid: {"id": cid, "user_id": uid, "model": "deep" if "2" in cid else "thinking"})
+    monkeypatch.setattr(store, "update_conversation", lambda cid, uid, patch: {"id": cid, "user_id": uid, **patch})
     monkeypatch.setattr(store, "get_messages", lambda cid, limit=None: [])
     monkeypatch.setattr(store, "add_message", lambda *args, **kwargs: {"id": "m_test", "role": kwargs.get("role", "assistant")})
     monkeypatch.setattr(store, "touch_conversation", lambda cid, uid: None)
@@ -1143,6 +1144,25 @@ def test_chat_default_reasoning_efforts(client, monkeypatch):
     assert resp.status_code == 200
     list(resp.response)
     assert captured_kwargs.get("reasoning_effort") == "high"
+
+    # 4. Voice assistant / client passing 'off' or 'none' is accepted and normalized
+    resp = client.post(
+        "/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"conversation_id": "c_1", "message": "hello voice", "model": "aeon", "reasoning_effort": "off"},
+    )
+    assert resp.status_code == 200
+    list(resp.response)
+    assert captured_kwargs.get("reasoning_effort") is None
+
+    resp = client.post(
+        "/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"conversation_id": "c_1", "message": "hello voice", "model": "aeon", "reasoning_effort": "none"},
+    )
+    assert resp.status_code == 200
+    list(resp.response)
+    assert captured_kwargs.get("reasoning_effort") is None
 
 
 def test_scrape_endpoint(client, monkeypatch):

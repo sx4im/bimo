@@ -786,7 +786,7 @@ export async function renderChat({ id, incognito }) {
             text,
             attachments: [],
             model: "aeon",
-            reasoningEffort: "off",
+            reasoningEffort: "low",
             searchEnabled: false,
             studyMode: false,
           });

@@ -176,7 +176,9 @@ def chat(user):
     reasoning_effort = payload.get("reasoning_effort")
     if reasoning_effort is not None and not isinstance(reasoning_effort, str):
         return bad_request("reasoning_effort must be a string", 422)
-    if reasoning_effort and reasoning_effort not in {"low", "medium", "high", "max"}:
+    if reasoning_effort in {"off", "none"}:
+        reasoning_effort = None
+    elif reasoning_effort and reasoning_effort not in {"low", "medium", "high", "max"}:
         return bad_request("reasoning_effort must be one of: low, medium, high, max", 422)
     if system_prompt is not None and not isinstance(system_prompt, str):
         return bad_request("system_prompt must be a string", 422)
