@@ -3621,20 +3621,26 @@ body:has(.chat-page.is-empty) .tools-menu,
   user-select: none;
   -webkit-user-select: none;
   background: transparent;
+  z-index: 1;
 }
 
 .composer textarea.has-url-highlight {
-  color: transparent;
-  caret-color: var(--ink);
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  caret-color: var(--ink) !important;
+  position: relative;
+  z-index: 2;
 }
 
 .composer textarea.has-url-highlight::selection {
   background: rgba(37, 99, 235, 0.25);
-  color: transparent;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
 }
 
 .composer-url-highlight {
-  color: #2563eb;
+  color: #2563eb !important;
+  -webkit-text-fill-color: #2563eb !important;
   text-decoration: underline;
   text-decoration-color: rgba(37, 99, 235, 0.45);
   text-underline-offset: 2px;
@@ -3642,11 +3648,13 @@ body:has(.chat-page.is-empty) .tools-menu,
 
 :root[data-theme="dark"] .composer textarea.has-url-highlight::selection {
   background: rgba(96, 165, 250, 0.35);
-  color: transparent;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
 }
 
 :root[data-theme="dark"] .composer-url-highlight {
-  color: #60a5fa;
+  color: #60a5fa !important;
+  -webkit-text-fill-color: #60a5fa !important;
   text-decoration-color: rgba(96, 165, 250, 0.5);
 }
 

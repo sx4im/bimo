@@ -11,7 +11,7 @@ global.Event = window.Event;
 global.HTMLElement = window.HTMLElement;
 global.Node = window.Node;
 
-const URL_REGEX = /(?:https?:\/\/|www\.)[^\s()<>]+(?:\([\w\d]+\)|(?:[^\s`!()\[\]{};:\x27".,<>?«»“”‘’]))/gi;
+const URL_REGEX = /(?:https?:\/\/|www\.)[^\s()<>]+(?:\([\w\d]+\)|(?:[^\s`!()\[\]{};:\x27".,<>?«»“”‘’]))|\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:[\/?#][^\s()<>]+(?:\([\w\d]+\)|(?:[^\s`!()\[\]{};:\x27".,<>?«»“”‘’])))?/gi;
 
 function extractUrls(text) {
   if (!text) return [];
@@ -54,14 +54,15 @@ function highlightUrlsInText(text) {
 }
 
 // Test 1: extractUrls
-const sample = "Check out https://firecrawl.dev/docs and www.example.com! Also https://example.com/test.";
+const sample = "Check out https://firecrawl.dev/docs and www.example.com! Also https://example.com/test and plain firecrawl.dev.";
 const urls = extractUrls(sample);
 assert.deepEqual(urls, [
   "https://firecrawl.dev/docs",
   "www.example.com",
   "https://example.com/test",
+  "firecrawl.dev",
 ]);
-console.log("ok: extractUrls extracts valid urls and strips trailing punctuation");
+console.log("ok: extractUrls extracts valid urls, dot-separated domains, and strips trailing punctuation");
 
 // Test 2: no URLs
 assert.deepEqual(extractUrls("Hello world, this is a plain message."), []);
