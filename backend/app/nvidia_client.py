@@ -632,6 +632,7 @@ def iter_response(
             model=chosen_model,
             temperature=temperature,
             max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
         )
         return
 

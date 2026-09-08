@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 
 # Default foundation models
-DEFAULT_STANZA_MODEL = "mistral-small-2603"
+DEFAULT_STANZA_MODEL = "codestral-2508"
 DEFAULT_NEXOS_MODEL = "openai/gpt-oss-120b"
 DEFAULT_VISION_MODEL = "google/diffusiongemma-26b-a4b-it"
 DEFAULT_AEON_MODEL = "qwen/qwen3.8-27b"
@@ -18,7 +18,7 @@ DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_IMAGE_BASE_URL = "https://ai.api.nvidia.com/v1/genai"
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
-DEFAULT_MISTRAL_MODEL = "mistral-small-2603"
+DEFAULT_MISTRAL_MODEL = "codestral-2508"
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 # Internal model catalog

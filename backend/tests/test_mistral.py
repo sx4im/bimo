@@ -21,9 +21,9 @@ def test_mistral_config_defaults(monkeypatch):
     monkeypatch.delenv("MISTRAL_BASE_URL", raising=False)
     monkeypatch.delenv("NVIDIA_STANZA_MODEL", raising=False)
 
-    assert mistral_client.default_model() == "mistral-small-2603"
+    assert mistral_client.default_model() == "codestral-2508"
     assert mistral_client.base_url() == "https://api.mistral.ai/v1"
-    assert config.get_stanza_model() == "mistral-small-2603"
+    assert config.get_stanza_model() == "codestral-2508"
 
 
 def test_mistral_model_env_override(monkeypatch):
@@ -35,9 +35,10 @@ def test_mistral_model_env_override(monkeypatch):
 
 def test_is_mistral_model():
     """Verify identification of Mistral models."""
+    assert mistral_client.is_mistral_model("codestral-2508") is True
+    assert mistral_client.is_mistral_model("codestral-22b-instruct") is True
     assert mistral_client.is_mistral_model("mistral-small-2603") is True
     assert mistral_client.is_mistral_model("mistral-medium-latest") is True
-    assert mistral_client.is_mistral_model("codestral-22b-instruct") is True
     assert mistral_client.is_mistral_model("pixtral-12b-2409") is True
     assert mistral_client.is_mistral_model("deepseek-ai/deepseek-v4-flash") is False
     assert mistral_client.is_mistral_model("meta/llama-3.3-70b-instruct") is False
@@ -66,7 +67,7 @@ def test_mistral_streaming_success(monkeypatch):
     monkeypatch.setenv("MISTRAL_API_KEY", "test-mistral-key")
 
     def mock_stream():
-        chunks = ["Hello", " world", " from", " Mistral!"]
+        chunks = ["Hello", " world", " from", " Codestral!"]
         for c in chunks:
             delta = types.SimpleNamespace(content=c)
             choice = types.SimpleNamespace(delta=delta, finish_reason=None)
@@ -83,20 +84,62 @@ def test_mistral_streaming_success(monkeypatch):
         {"role": "user", "content": "Hello!"},
     ]
 
-    events = list(mistral_client.iter_response(messages, model="mistral-small-2603"))
+    events = list(mistral_client.iter_response(messages, model="codestral-2508"))
 
     deltas = [ev["data"] for ev in events if ev["type"] == "delta"]
-    assert "".join(deltas) == "Hello world from Mistral!"
+    assert "".join(deltas) == "Hello world from Codestral!"
 
     done = next(ev for ev in events if ev["type"] == "done")
-    assert done["content"] == "Hello world from Mistral!"
+    assert done["content"] == "Hello world from Codestral!"
 
     # Verify messages passed to OpenAI client
     mock_client.chat.completions.create.assert_called_once()
     call_kwargs = mock_client.chat.completions.create.call_args.kwargs
-    assert call_kwargs["model"] == "mistral-small-2603"
+    assert call_kwargs["model"] == "codestral-2508"
     assert call_kwargs["stream"] is True
     assert call_kwargs["messages"] == messages
+    # Codestral defaults to 0.2 temperature for lower latency / precise code
+    assert call_kwargs["temperature"] == 0.2
+
+
+def test_codestral_extended_thinking_injection(monkeypatch):
+    """When reasoning_effort is high, injects deep analysis directive into system prompt."""
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-mistral-key")
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = iter([])
+    monkeypatch.setattr(mistral_client, "_client", lambda: mock_client)
+
+    # 1. Extended thinking ON (high) with existing system message
+    messages = [
+        {"role": "system", "content": "You are Bimo."},
+        {"role": "user", "content": "solve a hard algorithm"},
+    ]
+    list(mistral_client.iter_response(messages, model="codestral-2508", reasoning_effort="high"))
+    sent_msgs = mock_client.chat.completions.create.call_args.kwargs["messages"]
+    sys_content = sent_msgs[0]["content"]
+    assert "EXTENDED THINKING ACTIVE" in sys_content
+    assert "Deconstruct the user's requirements" in sys_content
+
+    # 2. Extended thinking OFF (low)
+    mock_client.reset_mock()
+    messages_low = [
+        {"role": "system", "content": "You are Bimo."},
+        {"role": "user", "content": "write hello world"},
+    ]
+    list(mistral_client.iter_response(messages_low, model="codestral-2508", reasoning_effort="low"))
+    sent_msgs_low = mock_client.chat.completions.create.call_args.kwargs["messages"]
+    assert "EXTENDED THINKING ACTIVE" not in sent_msgs_low[0]["content"]
+
+    # 3. Extended thinking ON when no initial system prompt
+    mock_client.reset_mock()
+    messages_no_sys = [
+        {"role": "user", "content": "design architecture"},
+    ]
+    list(mistral_client.iter_response(messages_no_sys, model="codestral-2508", reasoning_effort="high"))
+    sent_msgs_no_sys = mock_client.chat.completions.create.call_args.kwargs["messages"]
+    assert sent_msgs_no_sys[0]["role"] == "system"
+    assert "EXTENDED THINKING ACTIVE" in sent_msgs_no_sys[0]["content"]
 
 
 def test_mistral_multi_turn_history(monkeypatch):
@@ -114,7 +157,7 @@ def test_mistral_multi_turn_history(monkeypatch):
         {"role": "user", "content": "Turn 2 question"},
     ]
 
-    list(mistral_client.iter_response(history))
+    list(mistral_client.iter_response(history, reasoning_effort="low"))
     call_kwargs = mock_client.chat.completions.create.call_args.kwargs
     assert call_kwargs["messages"] == history
 
@@ -150,28 +193,28 @@ def test_mistral_error_handling(monkeypatch):
 
 
 def test_nvidia_dispatcher_routes_mistral(monkeypatch):
-    """nvidia_client.iter_response delegates mistral models to mistral_client."""
-    monkeypatch.setenv("MISTRAL_MODEL", "mistral-small-2603")
+    """nvidia_client.iter_response delegates mistral models to mistral_client with reasoning_effort."""
+    monkeypatch.setenv("MISTRAL_MODEL", "codestral-2508")
     monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
 
-    called = []
+    captured = {}
     def mock_mistral_iter(messages, **kwargs):
-        called.append(kwargs.get("model"))
+        captured.update(kwargs)
         yield {"type": "delta", "data": "routed to mistral"}
         yield {"type": "done", "content": "routed to mistral"}
 
     monkeypatch.setattr(mistral_client, "iter_response", mock_mistral_iter)
 
     messages = [{"role": "user", "content": "hello"}]
-    events = list(nvidia_client.iter_response(messages, model="mistral-small-2603"))
+    events = list(nvidia_client.iter_response(messages, model="codestral-2508", reasoning_effort="high"))
 
-    assert called == ["mistral-small-2603"]
+    assert captured.get("model") == "codestral-2508"
+    assert captured.get("reasoning_effort") == "high"
     assert any(ev.get("data") == "routed to mistral" for ev in events)
 
 
 def test_nvidia_dispatcher_preserves_nvidia_models(monkeypatch):
     """NVIDIA models continue to route through NVIDIA OpenAI client."""
-    captured = {}
     mock_openai_client = MagicMock()
     mock_choice = types.SimpleNamespace(
         delta=types.SimpleNamespace(content="from nvidia"),

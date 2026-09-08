@@ -16,6 +16,7 @@ import os
 import re
 from typing import Iterator, Optional
 
+import httpx
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -31,7 +32,17 @@ from openai import (
 logger = logging.getLogger("bimo.mistral")
 
 DEFAULT_MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
-DEFAULT_MISTRAL_MODEL = "mistral-small-2603"
+DEFAULT_MISTRAL_MODEL = "codestral-2508"
+
+CODESTRAL_EXTENDED_THINKING_DIRECTIVE = (
+    "\n\n[EXTENDED THINKING ACTIVE]\n"
+    "Apply deep, rigorous analysis before answering:\n"
+    "1. Deconstruct the user's requirements and underlying goals thoroughly.\n"
+    "2. Systematically evaluate edge cases, failure modes, scale constraints, and security.\n"
+    "3. Mentally verify logic and dry-run code paths before writing them.\n"
+    "4. Deliver clean, performant, production-grade solutions with architectural clarity.\n"
+    "5. Detail key technical trade-offs where appropriate."
+)
 
 _INVISIBLE_CHARS = (" ", "​", "‌", "‍", "﻿")
 _client_cache: dict[str, OpenAI] = {}
@@ -95,8 +106,9 @@ def is_mistral_model(model_name: Optional[str]) -> bool:
 def _client() -> OpenAI:
     """Return a cached OpenAI client pointed at Mistral's endpoint.
 
-    Uses conservative retry configuration (max 2 retries with exponential backoff)
-    to avoid compounding rate limits (20k tokens/min, 1 req/sec).
+    Uses keep-alive connection pooling to eliminate TCP/TLS handshake latency
+    on subsequent turns, and conservative retry configuration (max 2 retries
+    with exponential backoff) to avoid compounding rate limits (20k tokens/min, 1 req/sec).
     """
     key = _read_api_key()
     target_base = base_url()
@@ -109,7 +121,17 @@ def _client() -> OpenAI:
     cached = _client_cache.get(signature)
     if cached is not None:
         return cached
-    client = OpenAI(base_url=target_base, api_key=key, timeout=timeout, max_retries=retries)
+    http_client = httpx.Client(
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=60.0),
+        timeout=timeout,
+    )
+    client = OpenAI(
+        base_url=target_base,
+        api_key=key,
+        timeout=timeout,
+        max_retries=retries,
+        http_client=http_client,
+    )
     _client_cache[signature] = client
     return client
 
@@ -128,6 +150,7 @@ def iter_response(
     model: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
     **kwargs,
 ) -> Iterator[dict]:
     """Stream completions from Mistral.
@@ -140,12 +163,29 @@ def iter_response(
 
     # Normalize messages: Mistral expects standard role/content dicts
     cleaned_messages: list[dict] = []
+    has_system = False
     for m in messages:
         role = m.get("role")
         content = m.get("content")
         if not role or content is None:
             continue
+        if role == "system":
+            has_system = True
         cleaned_messages.append({"role": role, "content": content})
+
+    # For codestral, default to 0.2 temperature for faster, low-divergence decoding
+    if "codestral" in chosen_model.lower() and temperature == 0.7:
+        temperature = 0.2
+
+    # Inject extended thinking directive if requested
+    if reasoning_effort in ("high", "max"):
+        if has_system:
+            for m in cleaned_messages:
+                if m["role"] == "system":
+                    m["content"] = str(m["content"]) + CODESTRAL_EXTENDED_THINKING_DIRECTIVE
+                    break
+        else:
+            cleaned_messages.insert(0, {"role": "system", "content": CODESTRAL_EXTENDED_THINKING_DIRECTIVE.strip()})
 
     call_kwargs = {
         "model": chosen_model,

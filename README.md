@@ -67,7 +67,7 @@ The browser client uses HTML, CSS, and plain ES modules without build tools, fra
 ## Quick start
 
 ### Prerequisites
-Python 3.11+, a Supabase account, a [Mistral API key](https://console.mistral.ai/) (powers Stanza 2.5), and an NVIDIA API key (powers Nexos 3.0, Vision, and TTS).
+Python 3.11+, a Supabase account, a [Mistral API key](https://console.mistral.ai/) (powers Stanza 2.5 with `codestral-2508`), and an NVIDIA API key (powers Nexos 3.0, Vision, and TTS).
 
 ### 1. Database setup
 Run the SQL scripts in `backend/migrations/` in numerical order inside your Supabase project SQL editor (`0001_init.sql` → `0005_conversation_pinned.sql`):
