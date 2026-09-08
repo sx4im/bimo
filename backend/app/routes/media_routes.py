@@ -340,3 +340,49 @@ def search(user):  # noqa: ARG001
         for r in results[:8]
     ]
     return jsonify({"answer": data.get("answer", ""), "results": top, "live": is_live})
+
+
+# ---------- Web Scraping (Firecrawl) ----------
+
+@media_bp.post("/scrape")
+@limiter.limit("20 per minute")
+@require_user
+def scrape(user):  # noqa: ARG001
+    payload = request.get_json(silent=True) or {}
+    url = payload.get("url")
+    if not isinstance(url, str) or not url.strip():
+        return bad_request("url is required", 422)
+    api_key = os.environ.get("FIRECRAWL_API_KEY")
+    if not api_key:
+        return bad_request("web scraping is not configured", 503)
+
+    target_url = url.strip()
+    if not re.match(r"^https?://", target_url, re.IGNORECASE):
+        target_url = "https://" + target_url
+
+    try:
+        resp = requests.post(
+            "https://api.firecrawl.dev/v2/scrape",
+            json={"url": target_url, "formats": ["markdown"], "onlyMainContent": True},
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        logger.warning("scrape: Firecrawl request failed: %s", exc)
+        return bad_request("web scraping failed", 502)
+
+    scrape_data = data.get("data") or {}
+    markdown = scrape_data.get("markdown") or ""
+    metadata = scrape_data.get("metadata") or {}
+    title = metadata.get("title") or ""
+    description = metadata.get("description") or ""
+
+    return jsonify({
+        "success": True,
+        "markdown": markdown,
+        "title": title,
+        "description": description,
+        "url": target_url,
+    })

@@ -12,6 +12,48 @@ import { blobToWav16kMono } from "../audio-wav.js?v=30";
 import { getAuth } from "../auth.js?v=31";
 import * as api from "../api.js?v=56";
 
+export const URL_REGEX = /(?:https?:\/\/|www\.)[^\s()<>]+(?:\([\w\d]+\)|(?:[^\s`!()\[\]{};:\x27".,<>?«»“”‘’]))/gi;
+
+export function extractUrls(text) {
+  if (!text) return [];
+  const regex = new RegExp(URL_REGEX.source, "gi");
+  const matches = text.match(regex) || [];
+  return [...new Set(matches.map((u) => u.trim()))];
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function highlightUrlsInText(text) {
+  if (!text) return "";
+  const regex = new RegExp(URL_REGEX.source, "gi");
+  let result = "";
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const start = match.index;
+    const url = match[0];
+    if (start > lastIndex) {
+      result += escapeHtml(text.slice(lastIndex, start));
+    }
+    result += `<span class="composer-url-highlight">${escapeHtml(url)}</span>`;
+    lastIndex = start + url.length;
+  }
+  if (lastIndex < text.length) {
+    result += escapeHtml(text.slice(lastIndex));
+  }
+  if (text.endsWith("\n")) {
+    result += "<br>";
+  }
+  return result;
+}
+
 export const REASONING_EFFORT_OPTIONS = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -277,12 +319,23 @@ export class Composer {
     ]);
 
     // Textarea & Action buttons
+    this.backdrop = el("div", { class: "composer-backdrop", "aria-hidden": "true" });
     this.textarea = el("textarea", {
       rows: 1,
       placeholder: greetingPlaceholder(),
       "aria-label": "Message",
       autofocus: "",
-      oninput: (e) => { this.autoSize(e.target); this.syncSendEnabled(); },
+      oninput: (e) => {
+        this.autoSize(e.target);
+        this.syncSendEnabled();
+        this.syncUrlHighlight();
+      },
+      onscroll: () => {
+        if (this.backdrop) {
+          this.backdrop.scrollTop = this.textarea.scrollTop;
+          this.backdrop.scrollLeft = this.textarea.scrollLeft;
+        }
+      },
       onkeydown: (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
@@ -298,7 +351,14 @@ export class Composer {
             if (f) files.push(f);
           }
         }
-        if (!files.length) return;
+        if (!files.length) {
+          setTimeout(() => {
+            this.autoSize(this.textarea);
+            this.syncSendEnabled();
+            this.syncUrlHighlight();
+          }, 0);
+          return;
+        }
         e.preventDefault();
         if (files.length > 3) {
           toast("Max 3 files", { tone: "error" });
@@ -306,6 +366,10 @@ export class Composer {
         for (const file of files.slice(0, 3)) this.uploadAndAttach(file);
       },
     });
+    this.inputWrap = el("div", { class: "composer-input-wrap" }, [
+      this.backdrop,
+      this.textarea,
+    ]);
 
     this.sendBtn = el("button", {
       type: "submit",
@@ -344,7 +408,7 @@ export class Composer {
 
     this.composerBox = el("div", { class: "composer-box glass" }, [
       this.attachmentsBar,
-      this.textarea,
+      this.inputWrap,
       this.composerToolbar,
     ]);
 
@@ -382,6 +446,7 @@ export class Composer {
         this.textarea.value = "";
         this.autoSize(this.textarea);
         this.syncSendEnabled();
+        this.syncUrlHighlight();
         this.onSubmit?.({
           text,
           attachments: this.pendingAttachments.slice(),
@@ -429,12 +494,32 @@ export class Composer {
   autoSize(node) {
     node.style.height = "auto";
     node.style.height = `${node.scrollHeight}px`;
+    if (this.backdrop && node === this.textarea) {
+      this.backdrop.scrollTop = node.scrollTop;
+      this.backdrop.scrollLeft = node.scrollLeft;
+    }
+  }
+
+  syncUrlHighlight() {
+    if (!this.backdrop || !this.textarea) return;
+    const val = this.textarea.value;
+    const regex = new RegExp(URL_REGEX.source, "i");
+    if (regex.test(val)) {
+      this.textarea.classList.add("has-url-highlight");
+      this.backdrop.innerHTML = highlightUrlsInText(val);
+      this.backdrop.scrollTop = this.textarea.scrollTop;
+      this.backdrop.scrollLeft = this.textarea.scrollLeft;
+    } else {
+      this.textarea.classList.remove("has-url-highlight");
+      this.backdrop.innerHTML = "";
+    }
   }
 
   setText(text) {
     this.textarea.value = text || "";
     this.autoSize(this.textarea);
     this.syncSendEnabled();
+    this.syncUrlHighlight();
   }
 
   focus() {
@@ -1089,6 +1174,7 @@ export class Composer {
           this.textarea.value = cur ? `${cur} ${result.text}` : result.text;
           this.autoSize(this.textarea);
           this.syncSendEnabled();
+          this.syncUrlHighlight();
         }
       } catch (err) {
         toast(err.message || "Transcription failed", { tone: "error" });

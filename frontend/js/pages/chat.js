@@ -12,10 +12,10 @@ import { toast } from "../components/toast.js?v=58";
 import { whenMarkdownReady } from "../components/markdown.js?v=31";
 import { openVoiceOverlay } from "../components/voice-overlay.js?v=43";
 import { openDocViewerModal } from "../components/doc-modal.js?v=3";
-import * as api from "../api.js?v=56";
+import * as api from "../api.js?v=57";
 
-import { Composer, DEFAULT_AVAILABLE_MODELS } from "../chat/composer.js?v=20";
-import { MessageFeed } from "../chat/message-feed.js?v=26";
+import { Composer, DEFAULT_AVAILABLE_MODELS, extractUrls } from "../chat/composer.js?v=21";
+import { MessageFeed } from "../chat/message-feed.js?v=27";
 import { StreamHandler, getRandomPhrase } from "../chat/stream-handler.js?v=5";
 import { STUDY_SYSTEM_PROMPT } from "../chat/study-mode.js?v=2";
 import {
@@ -66,6 +66,34 @@ function buildSearchContext(answer, results, originalMessage) {
   );
 }
 
+function buildScrapeContext(scrapedItems, originalMessage) {
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const now = new Date().toLocaleString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  });
+
+  const docs = scrapedItems.map((item) => {
+    const titlePart = item.title ? `"${item.title}" ` : "";
+    const header = `=== Webpage Content: ${titlePart}(${item.url}) ===`;
+    const content = (item.markdown || "").slice(0, 30000);
+    return `${header}\n${content}`;
+  }).join("\n\n");
+
+  return (
+    `The current date and time is ${now} (today is ${today}). The webpage content ` +
+    `below was scraped live using Firecrawl for the requested URL(s). It is authoritative ` +
+    `and reflects the live page.\n\n` +
+    `${docs}\n\n` +
+    `User message: ${originalMessage}`
+  );
+}
+
 export async function renderChat({ id, incognito }) {
   const { auth } = getAuth();
   if (!auth) {
@@ -84,6 +112,8 @@ export async function renderChat({ id, incognito }) {
   let loading = false;
   let availableModels = DEFAULT_AVAILABLE_MODELS;
   let defaultModel = "thinking";
+  let searching = false;
+  let searchingLabel = "Searching the web";
 
 
   let enteringId = null;
@@ -358,6 +388,7 @@ export async function renderChat({ id, incognito }) {
       user: getAuth().auth?.user || auth.user,
       generating: composer.isGenerating,
       searching,
+      searchingLabel,
       imageGenerating,
       streamingText: streamHandler.streamingText,
       streamingReasoning: streamHandler.streamingReasoning,
@@ -471,8 +502,49 @@ export async function renderChat({ id, incognito }) {
     const streamId = uid("stream");
     let llmMessage = text;
 
-    if (searchEnabled && text) {
+    const urls = extractUrls(text);
+    if (urls.length > 0) {
       searching = true;
+      searchingLabel = urls.length === 1 ? "Reading webpage…" : "Reading links…";
+      renderUI();
+      messageFeed.follower.attach();
+      messageFeed.scrollToBottom();
+      try {
+        const scrapePromises = urls.slice(0, 3).map(async (u) => {
+          try {
+            const res = await api.scrapeUrl(auth.token, u);
+            if (res?.markdown) {
+              return { url: u, title: res.title || u, description: res.description, markdown: res.markdown };
+            }
+          } catch (err) {
+            console.warn(`Scrape failed for ${u}:`, err.message);
+          }
+          return null;
+        });
+        const scraped = (await Promise.allSettled(scrapePromises))
+          .map((r) => (r.status === "fulfilled" ? r.value : null))
+          .filter(Boolean);
+
+        if (scraped.length > 0) {
+          llmMessage = buildScrapeContext(scraped, text);
+        } else if (searchEnabled) {
+          searchingLabel = "Searching the web";
+          renderUI();
+          const res = await api.searchWeb(auth.token, text);
+          const results = res?.results || [];
+          if (res?.answer || results.length) {
+            llmMessage = buildSearchContext(res.answer, results, text);
+          }
+        }
+      } catch (err) {
+        console.warn("web scraping/search failed:", err.message);
+      } finally {
+        searching = false;
+        searchingLabel = "Searching the web";
+      }
+    } else if (searchEnabled && text) {
+      searching = true;
+      searchingLabel = "Searching the web";
       renderUI();
       messageFeed.follower.attach();
       messageFeed.scrollToBottom();

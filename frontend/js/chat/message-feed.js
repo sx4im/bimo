@@ -56,12 +56,12 @@ export function imageGeneratingNode() {
   ]);
 }
 
-export function searchingBubbleNode() {
+export function searchingBubbleNode(label = "Searching the web") {
   return el("article", { class: "message assistant searching" }, [
     el("div", { class: "body" }, [
       el("div", { class: "bubble search-bubble" }, [
         el("span", { class: "orb-slot" }, [searchOrb(16)]),
-        el("span", { class: "search-label", text: "Searching the web" }),
+        el("span", { class: "search-label", text: label }),
       ]),
     ]),
   ]);
@@ -232,6 +232,7 @@ export class MessageFeed {
     user = null,
     generating = false,
     searching = false,
+    searchingLabel = "Searching the web",
     imageGenerating = false,
     streamingText = "",
     streamingReasoning = "",
@@ -335,8 +336,13 @@ export class MessageFeed {
     // Trailing nodes (searching / image gen / live stream)
     if (searching) {
       if (!this._searchingNode || !this._searchingNode.isConnected) {
-        this._searchingNode = searchingBubbleNode();
+        this._searchingNode = searchingBubbleNode(searchingLabel);
         this.streamInner.append(this._searchingNode);
+      } else {
+        const labelEl = this._searchingNode.querySelector(".search-label");
+        if (labelEl && labelEl.textContent !== searchingLabel) {
+          labelEl.textContent = searchingLabel;
+        }
       }
     } else if (this._searchingNode) {
       this._searchingNode.remove();

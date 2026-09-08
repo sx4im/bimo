@@ -48,6 +48,7 @@ def test_unauth_routes_require_jwt(client):
     assert client.post("/chat", json={"message": "hi"}).status_code == 401
     assert client.post("/images/generate", json={"prompt": "a cat"}).status_code == 401
     assert client.post("/search", json={"query": "weather"}).status_code == 401
+    assert client.post("/scrape", json={"url": "https://example.com"}).status_code == 401
     assert client.post("/tts", json={"text": "hello"}).status_code == 401
     assert client.get("/models").status_code == 401
     assert client.get("/analytics/summary").status_code == 401
@@ -1142,6 +1143,83 @@ def test_chat_default_reasoning_efforts(client, monkeypatch):
     assert resp.status_code == 200
     list(resp.response)
     assert captured_kwargs.get("reasoning_effort") == "high"
+
+
+def test_scrape_endpoint(client, monkeypatch):
+    import time
+    import jwt
+    import requests
+
+    claims = {
+        "sub": "test_scrape_user",
+        "email": "scrape@test.com",
+        "aud": "authenticated",
+        "iss": "https://example.supabase.co/auth/v1",
+        "exp": int(time.time()) + 3600,
+    }
+    token = jwt.encode(claims, "test-jwt-secret", algorithm="HS256")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Missing URL -> 422
+    res = client.post("/scrape", headers=headers, json={})
+    assert res.status_code == 422
+
+    # 2. Web scraping not configured (no key) -> 503
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    res = client.post("/scrape", headers=headers, json={"url": "example.com"})
+    assert res.status_code == 503
+
+    # 3. Successful scrape with mock Firecrawl response
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test-key")
+
+    class MockResponse:
+        def __init__(self, status_code, json_data):
+            self.status_code = status_code
+            self._json = json_data
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(f"HTTP {self.status_code}")
+
+        def json(self):
+            return self._json
+
+    captured_req = {}
+    def mock_post(url, **kwargs):
+        captured_req["url"] = url
+        captured_req.update(kwargs)
+        return MockResponse(200, {
+            "success": True,
+            "data": {
+                "markdown": "# Example Domain\nThis domain is for use in illustrative examples.",
+                "metadata": {
+                    "title": "Example Domain",
+                    "description": "Example Domain description",
+                },
+            },
+        })
+
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    res = client.post("/scrape", headers=headers, json={"url": "example.com"})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    assert "Example Domain" in data["markdown"]
+    assert data["title"] == "Example Domain"
+    assert data["url"] == "https://example.com"
+    assert captured_req["url"] == "https://api.firecrawl.dev/v2/scrape"
+    assert captured_req["headers"]["Authorization"] == "Bearer fc-test-key"
+    assert captured_req["json"]["url"] == "https://example.com"
+
+    # 4. Firecrawl error -> 502
+    def mock_post_err(url, **kwargs):
+        raise requests.RequestException("Firecrawl down")
+
+    monkeypatch.setattr(requests, "post", mock_post_err)
+    res = client.post("/scrape", headers=headers, json={"url": "https://example.com"})
+    assert res.status_code == 502
+
 
 
 

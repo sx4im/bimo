@@ -251,6 +251,13 @@ export async function searchWeb(token, query, signal) {
   return request("/search", { method: "POST", token, body: { query }, signal });
 }
 
+// ---------- web scraping (Firecrawl) ----------
+
+// Scrapes a webpage with Firecrawl and returns { markdown, title, description, url }.
+export async function scrapeUrl(token, url, signal) {
+  return request("/scrape", { method: "POST", token, body: { url }, signal });
+}
+
 // ---------- feedback (per-message thumbs up/down) ----------
 
 export async function submitFeedback(token, payload) {

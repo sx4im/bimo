@@ -3589,6 +3589,67 @@ body:has(.chat-page.is-empty) .tools-menu,
   box-shadow: none;
 }
 
+.composer-input-wrap {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.composer-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 6px 2px 2px 4px;
+  border: 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  background: transparent;
+}
+
+.composer textarea.has-url-highlight {
+  color: transparent;
+  caret-color: var(--ink);
+}
+
+.composer textarea.has-url-highlight::selection {
+  background: rgba(37, 99, 235, 0.25);
+  color: transparent;
+}
+
+.composer-url-highlight {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.45);
+  text-underline-offset: 2px;
+}
+
+:root[data-theme="dark"] .composer textarea.has-url-highlight::selection {
+  background: rgba(96, 165, 250, 0.35);
+  color: transparent;
+}
+
+:root[data-theme="dark"] .composer-url-highlight {
+  color: #60a5fa;
+  text-decoration-color: rgba(96, 165, 250, 0.5);
+}
+
 .composer textarea {
   width: 100%;
   min-width: 0;
@@ -5840,7 +5901,8 @@ body:has(.chat-page.is-empty) .tools-menu,
     min-width: 40px;
   }
 
-  .composer textarea {
+  .composer textarea,
+  .composer-backdrop {
     font-size: 16px;
     /* prevent iOS zoom on focus */
     padding: 6px 2px 2px;
