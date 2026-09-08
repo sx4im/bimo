@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from . import nvidia_client, store, supabase_client, whatsapp
+from . import mistral_client, nvidia_client, store, supabase_client, whatsapp
 from .auth import prewarm_jwks
 from .config import (
     DEFAULT_IMAGE_MODEL,
@@ -134,6 +134,9 @@ if supabase_client.is_configured():
     threading.Thread(target=prewarm_jwks, name="bimo-jwks-prewarm", daemon=True).start()
 
 # Run a one-time API test on import
+if mistral_client.is_configured():
+    logger.info("Mistral key fingerprint: %s (model=%s)", mistral_client.api_key_fingerprint(), mistral_client.default_model())
+
 if nvidia_client.is_configured():
     logger.info("NVIDIA key fingerprint: %s", nvidia_client.api_key_fingerprint())
     try:

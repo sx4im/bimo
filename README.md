@@ -34,9 +34,10 @@ The browser client uses HTML, CSS, and plain ES modules without build tools, fra
 
 - **Passwordless authentication**: Sign in with Google through Supabase OAuth. Tokens are verified using ES256 JWTs against project JWKS keys.
 - **Live streaming**: Responses stream using Server-Sent Events with inline Markdown, syntax-highlighted code blocks, and KaTeX rendering.
-- **Model routing**: Switch between all-round help (Stanza 2.5), deep reasoning (Nexos 3.0), and image generation (Iris 1.0).
+- **Model routing**: Switch between all-round help (Stanza 2.5 powered by Mistral AI), deep reasoning (Nexos 3.0), and image generation (Iris 1.0).
 - **Document parsing**: Drop in PDF, DOCX, XLSX, PPTX, or ZIP files to extract text and analyze contents.
 - **Vision processing**: Attach images to route prompts to a vision model.
+- **Web search & scraping**: Live web search via Tavily and full page scraping via Firecrawl.
 - **Voice assistant**: Speech to text and text to speech powered by NVIDIA Riva.
 - **Server cancellation**: Stopping a response halts generation on the server immediately using an internal stream registry.
 
@@ -66,7 +67,7 @@ The browser client uses HTML, CSS, and plain ES modules without build tools, fra
 ## Quick start
 
 ### Prerequisites
-Python 3.11+, a Supabase account, and an NVIDIA API key.
+Python 3.11+, a Supabase account, a [Mistral API key](https://console.mistral.ai/) (powers Stanza 2.5), and an NVIDIA API key (powers Nexos 3.0, Vision, and TTS).
 
 ### 1. Database setup
 Run the SQL scripts in `backend/migrations/` in numerical order inside your Supabase project SQL editor (`0001_init.sql` → `0005_conversation_pinned.sql`):
@@ -102,6 +103,7 @@ BIMO/
 │   │   ├── main.py                Flask gateway, streaming routes, model map
 │   │   ├── auth.py                JWT and JWKS authentication verification
 │   │   ├── store.py               Postgres and Storage data operations
+│   │   ├── mistral_client.py      Mistral AI client for Stanza 2.5
 │   │   ├── nvidia_client.py       Inference wrapper for OpenAI SDK and NIM
 │   │   ├── riva_transcribe.py     Riva speech-to-text integration
 │   │   ├── riva_tts.py            Riva text-to-speech integration

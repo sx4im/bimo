@@ -1,0 +1,225 @@
+"""Mistral AI client for Bimo.
+
+Bimo interacts with Mistral AI's official OpenAI-compatible chat completions
+endpoint (https://api.mistral.ai/v1) using the OpenAI Python SDK. This provides
+high reliability, connection pooling, and standardized error handling without
+requiring extra third-party dependencies.
+
+Streaming is supported natively: ``iter_response`` yields ``{"type": "delta", "data": ...}``
+chunks as tokens stream in, followed by a final ``{"type": "done", "content": "..."}`` event.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from typing import Iterator, Optional
+
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
+
+logger = logging.getLogger("bimo.mistral")
+
+DEFAULT_MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+DEFAULT_MISTRAL_MODEL = "mistral-small-2603"
+
+_INVISIBLE_CHARS = (" ", "​", "‌", "‍", "﻿")
+_client_cache: dict[str, OpenAI] = {}
+
+
+def _clean_key(raw: str) -> str:
+    cleaned = raw
+    for invisible in _INVISIBLE_CHARS:
+        cleaned = cleaned.replace(invisible, "")
+    cleaned = cleaned.strip().strip('"').strip("'").strip()
+    if any(ch in cleaned for ch in ("\n", "\r", "\t", " ")):
+        raise RuntimeError("Mistral API key contains whitespace inside the value.")
+    return cleaned
+
+
+def base_url() -> str:
+    return os.getenv("MISTRAL_BASE_URL", DEFAULT_MISTRAL_BASE_URL).rstrip("/")
+
+
+def default_model() -> str:
+    return os.getenv("MISTRAL_MODEL", DEFAULT_MISTRAL_MODEL).strip()
+
+
+def _read_api_key() -> str:
+    raw = os.environ.get("MISTRAL_API_KEY")
+    if not raw:
+        raise RuntimeError(
+            "MISTRAL_API_KEY is not set. Add it to backend/.env or your "
+            "deployment environment."
+        )
+    cleaned = _clean_key(raw)
+    if not cleaned:
+        raise RuntimeError("MISTRAL_API_KEY is empty after stripping whitespace/quotes.")
+    return cleaned
+
+
+def is_configured() -> bool:
+    return bool(os.environ.get("MISTRAL_API_KEY", "").strip())
+
+
+def api_key_fingerprint() -> dict:
+    """Return a safe, masked summary of the configured Mistral key for logs."""
+    try:
+        key = _read_api_key()
+    except RuntimeError as exc:
+        return {"configured": False, "error": str(exc)}
+    return {
+        "configured": True,
+        "length": len(key),
+        "preview": f"{key[:4]}…{key[-4:]}" if len(key) > 8 else "(too short)",
+    }
+
+
+def is_mistral_model(model_name: Optional[str]) -> bool:
+    if not model_name:
+        return False
+    m = model_name.lower().strip()
+    return m.startswith("mistral") or "codestral" in m or "pixtral" in m or m == default_model().lower()
+
+
+def _client() -> OpenAI:
+    """Return a cached OpenAI client pointed at Mistral's endpoint.
+
+    Uses conservative retry configuration (max 2 retries with exponential backoff)
+    to avoid compounding rate limits (20k tokens/min, 1 req/sec).
+    """
+    key = _read_api_key()
+    target_base = base_url()
+    try:
+        timeout = float(os.getenv("MISTRAL_TIMEOUT", "120"))
+    except (TypeError, ValueError):
+        timeout = 120.0
+    retries = 2
+    signature = f"{target_base}::{key}::{timeout}::{retries}"
+    cached = _client_cache.get(signature)
+    if cached is not None:
+        return cached
+    client = OpenAI(base_url=target_base, api_key=key, timeout=timeout, max_retries=retries)
+    _client_cache[signature] = client
+    return client
+
+
+def _clean_text(text: str) -> str:
+    if not text:
+        return ""
+    # Strip any leaked channel tokens or weird control characters
+    text = re.sub(r"<\|channel\|>[a-zA-Z0-9_]*|<\|channel\|>|<channel\|>[a-zA-Z0-9_]*|<channel\|>", "", text)
+    return text
+
+
+def iter_response(
+    messages: list[dict],
+    *,
+    model: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: Optional[int] = None,
+    **kwargs,
+) -> Iterator[dict]:
+    """Stream completions from Mistral.
+
+    Yields {"type": "delta", "data": str} for each incoming token chunk,
+    then {"type": "done", "content": str} when complete.
+    """
+    chosen_model = model or default_model()
+    client = _client()
+
+    # Normalize messages: Mistral expects standard role/content dicts
+    cleaned_messages: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        content = m.get("content")
+        if not role or content is None:
+            continue
+        cleaned_messages.append({"role": role, "content": content})
+
+    call_kwargs = {
+        "model": chosen_model,
+        "messages": cleaned_messages,
+        "temperature": temperature,
+        "stream": True,
+    }
+    if max_tokens is not None:
+        call_kwargs["max_tokens"] = max_tokens
+
+    full: list[str] = []
+    chunk_count = 0
+
+    try:
+        stream = client.chat.completions.create(**call_kwargs)
+        for chunk in stream:
+            chunk_count += 1
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            delta = getattr(choice.delta, "content", None)
+            if delta:
+                cleaned_delta = _clean_text(delta)
+                if cleaned_delta:
+                    full.append(cleaned_delta)
+                    yield {"type": "delta", "data": cleaned_delta}
+
+            if choice.finish_reason:
+                logger.info(
+                    "mistral: finish_reason=%s chunks=%d chars=%d model=%s",
+                    choice.finish_reason, chunk_count, len("".join(full)), chosen_model,
+                )
+                break
+    except AuthenticationError as exc:
+        raise RuntimeError("Mistral authentication failed (401). Check MISTRAL_API_KEY.") from exc
+    except RateLimitError as exc:
+        raise RuntimeError(
+            "Mistral rate limit exceeded (429: 20k tokens/min, 1 req/sec). Please wait a moment."
+        ) from exc
+    except BadRequestError as exc:
+        msg = getattr(exc, "message", None) or str(exc)
+        raise RuntimeError(f"Mistral request rejected (400): {msg}") from exc
+    except PermissionDeniedError as exc:
+        raise RuntimeError("Mistral permission denied (403). Check your account permissions.") from exc
+    except NotFoundError as exc:
+        raise RuntimeError(f"Mistral model '{chosen_model}' was not found (404). Check MISTRAL_MODEL.") from exc
+    except APIStatusError as exc:
+        raise RuntimeError(f"Mistral service error ({exc.status_code}): {exc.message}") from exc
+    except (APIConnectionError, APITimeoutError) as exc:
+        raise RuntimeError(f"Network error reaching Mistral: {exc}") from exc
+    except Exception as exc:
+        msg = str(exc).strip() or exc.__class__.__name__
+        raise RuntimeError(f"Mistral stream interrupted: {msg}") from exc
+
+    yield {"type": "done", "content": "".join(full)}
+
+
+def test_call(model: Optional[str] = None) -> dict:
+    """Minimal chat completion to verify the key and model configuration."""
+    chosen_model = model or default_model()
+    try:
+        client = _client()
+        completion = client.chat.completions.create(
+            model=chosen_model,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Say 'API test OK' and nothing else."},
+            ],
+            max_tokens=20,
+            temperature=0.0,
+        )
+        resp_model = completion.model or chosen_model
+        logger.info("Mistral API test call OK — responding model: %s", resp_model)
+        return {"ok": True, "model": resp_model}
+    except Exception as exc:
+        logger.warning("Mistral API test call failed: %s", exc)
+        return {"ok": False, "error": str(exc)}

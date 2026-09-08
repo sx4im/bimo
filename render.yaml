@@ -85,5 +85,10 @@ services:
         sync: false
       - key: FIRECRAWL_API_KEY
         sync: false
+      # Mistral AI (Stanza 2.5)
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: MISTRAL_MODEL
+        value: mistral-small-2603
 
 

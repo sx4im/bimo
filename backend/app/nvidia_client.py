@@ -48,6 +48,7 @@ from openai import (
     RateLimitError,
 )
 
+from . import mistral_client
 from .config import (
     DEFAULT_BASE_URL,
     DEFAULT_IMAGE_BASE_URL,
@@ -68,6 +69,8 @@ logger = logging.getLogger("bimo.nvidia")
 
 def base_url(model: Optional[str] = None) -> str:
     if model:
+        if mistral_client.is_mistral_model(model):
+            return mistral_client.base_url()
         m = model.lower()
         if "inkling" in m or "nexos" in m:
             nexos_url = os.environ.get("NVIDIA_NEXOS_BASE_URL") or os.environ.get("TINKER_BASE_URL")
@@ -96,9 +99,11 @@ def _clean_key(raw: str) -> str:
 
 def _read_api_key(model: Optional[str] = None) -> str:
     """Read API_KEY from the environment defensively.
-    Supports model-specific overrides like NVIDIA_NEXOS_KEY or TINKER_API_KEY.
+    Supports model-specific overrides like NVIDIA_NEXOS_KEY, TINKER_API_KEY, or MISTRAL_API_KEY.
     """
     if model:
+        if mistral_client.is_mistral_model(model):
+            return mistral_client._read_api_key()
         m = model.lower()
         if "inkling" in m or "nexos" in m:
             nexos_key = os.environ.get("NVIDIA_NEXOS_KEY") or os.environ.get("TINKER_API_KEY")
@@ -137,7 +142,7 @@ def api_key_fingerprint() -> dict:
 
 
 def is_configured() -> bool:
-    return bool(os.environ.get("NVIDIA_API_KEY"))
+    return bool(os.environ.get("NVIDIA_API_KEY")) or mistral_client.is_configured()
 
 
 # ---------------------------------------------------------------------------
@@ -621,6 +626,15 @@ def iter_response(
         {"type": "usage", "data": dict} at the end if provided
     """
     chosen_model = (model or default_model()).strip()
+    if mistral_client.is_mistral_model(chosen_model):
+        yield from mistral_client.iter_response(
+            messages,
+            model=chosen_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return
+
     kwargs = {}
 
     if any(k in chosen_model.lower() for k in ("deepseek", "inkling", "thinking", "mistral", "gpt-oss", "oss", "nexos", "gemma", "diffusiongemma", "google")):
@@ -987,7 +1001,10 @@ def generate_title(user_message: str, assistant_reply: str) -> Optional[str]:
         return None
     try:
         model_to_use = get_stanza_model() or default_model()
-        client = _client(model_to_use)
+        if mistral_client.is_mistral_model(model_to_use):
+            client = mistral_client._client()
+        else:
+            client = _client(model_to_use)
         completion = client.chat.completions.create(
             model=model_to_use,
             messages=[

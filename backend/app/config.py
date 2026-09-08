@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 
 # Default foundation models
-DEFAULT_STANZA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+DEFAULT_STANZA_MODEL = "mistral-small-2603"
 DEFAULT_NEXOS_MODEL = "openai/gpt-oss-120b"
 DEFAULT_VISION_MODEL = "google/diffusiongemma-26b-a4b-it"
 DEFAULT_AEON_MODEL = "qwen/qwen3.8-27b"
@@ -17,6 +17,8 @@ DEFAULT_IMAGE_MODEL = "black-forest-labs/flux.2-klein-4b"
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_IMAGE_BASE_URL = "https://ai.api.nvidia.com/v1/genai"
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+DEFAULT_MISTRAL_MODEL = "mistral-small-2603"
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 # Internal model catalog
@@ -25,8 +27,16 @@ AEON_MODEL_ID = "aeon"
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "openai/whisper-large-v3")
 
 
+def get_mistral_model() -> str:
+    return os.getenv("MISTRAL_MODEL", DEFAULT_MISTRAL_MODEL).strip()
+
+
 def get_stanza_model() -> str:
-    return os.getenv("NVIDIA_STANZA_MODEL", DEFAULT_STANZA_MODEL).strip()
+    return (
+        os.getenv("MISTRAL_MODEL")
+        or os.getenv("NVIDIA_STANZA_MODEL")
+        or DEFAULT_STANZA_MODEL
+    ).strip()
 
 
 def get_nexos_model() -> str:
