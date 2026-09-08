@@ -48,7 +48,7 @@ from openai import (
     RateLimitError,
 )
 
-from . import mistral_client
+from . import groq_client, mistral_client
 from .config import (
     DEFAULT_BASE_URL,
     DEFAULT_IMAGE_BASE_URL,
@@ -69,6 +69,8 @@ logger = logging.getLogger("bimo.nvidia")
 
 def base_url(model: Optional[str] = None) -> str:
     if model:
+        if groq_client.is_groq_model(model):
+            return groq_client.base_url()
         if mistral_client.is_mistral_model(model):
             return mistral_client.base_url()
         m = model.lower()
@@ -99,9 +101,11 @@ def _clean_key(raw: str) -> str:
 
 def _read_api_key(model: Optional[str] = None) -> str:
     """Read API_KEY from the environment defensively.
-    Supports model-specific overrides like NVIDIA_NEXOS_KEY, TINKER_API_KEY, or MISTRAL_API_KEY.
+    Supports model-specific overrides like NVIDIA_NEXOS_KEY, TINKER_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY.
     """
     if model:
+        if groq_client.is_groq_model(model):
+            return groq_client._read_api_key()
         if mistral_client.is_mistral_model(model):
             return mistral_client._read_api_key()
         m = model.lower()
@@ -142,7 +146,7 @@ def api_key_fingerprint() -> dict:
 
 
 def is_configured() -> bool:
-    return bool(os.environ.get("NVIDIA_API_KEY")) or mistral_client.is_configured()
+    return bool(os.environ.get("NVIDIA_API_KEY")) or mistral_client.is_configured() or groq_client.is_configured()
 
 
 # ---------------------------------------------------------------------------
@@ -635,6 +639,35 @@ def iter_response(
             reasoning_effort=reasoning_effort,
         )
         return
+
+    if groq_client.is_groq_model(chosen_model):
+        if groq_client.is_configured():
+            try:
+                yield from groq_client.iter_response(
+                    messages,
+                    model=chosen_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return
+            except Exception as exc:
+                logger.warning("Groq inference failed for %s, falling back to Stanza: %s", chosen_model, exc)
+                yield from mistral_client.iter_response(
+                    messages,
+                    model=get_stanza_model(),
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return
+        else:
+            logger.info("GROQ_API_KEY not configured for %s, falling back to Stanza", chosen_model)
+            yield from mistral_client.iter_response(
+                messages,
+                model=get_stanza_model(),
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return
 
     kwargs = {}
 
